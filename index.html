@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Inventory - Simple Login</title>
+    
+    <!-- React -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Axios -->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    
+    <!-- SheetJS -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- Quagga Barcode Scanner -->
+    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); }
+        .clickable-image { cursor: pointer; transition: transform 0.2s; }
+        .clickable-image:hover { transform: scale(1.05); }
+        @keyframes slideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .slide-in { animation: slideIn 0.3s ease-out; }
+        .status-card { transition: all 0.3s ease; }
+        .status-card:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+        .status-active { border: 3px solid #3b82f6; background-color: #eff6ff; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // ==================== CONFIGURATION ====================
+        // PERSONAL PASSWORD - Sirf aapko pata hoga
+        const MASTER_PASSWORD = "Inventory@2024";  // Yeh password sirf aapko bataya jayega
+        
+        // Cloud Storage API (Free JSON Blob)
+        const CLOUD_API = 'https://jsonblob.com/api/jsonBlob';
+        const CLOUD_ID_KEY = 'inventory_cloud_id';
+
+        // ==================== Cloud Service ====================
+        class CloudService {
+            async saveToCloud(data) {
+                try {
+                    const blobId = localStorage.getItem(CLOUD_ID_KEY);
+                    if (blobId) {
+                        await axios.put(`${CLOUD_API}/${blobId}`, data);
+                    } else {
+                        const response = await axios.post(CLOUD_API, data);
+                        const newBlobId = response.headers.location.split('/').pop();
+                        localStorage.setItem(CLOUD_ID_KEY, newBlobId);
+                    }
+                    return true;
+                } catch (error) {
+                    console.error('Cloud save error:', error);
+                    return false;
+                }
+            }
+
+            async loadFromCloud() {
+                try {
+                    const blobId = localStorage.getItem(CLOUD_ID_KEY);
+                    if (blobId) {
+                        const response = await axios.get(`${CLOUD_API}/${blobId}`);
+                        return response.data;
+                    }
+                    return null;
+                } catch (error) {
+                    console.error('Cloud load error:', error);
+                    return null;
+                }
+            }
+        }
+
+        const cloudService = new CloudService();
+
+        // ==================== Main App ====================
+        function App() {
+            const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+            const [loading, setLoading] = React.useState(true);
+
+            React.useEffect(() => {
+                // Check if already logged in
+                const session = localStorage.getItem('inventory_session');
+                if (session === 'active') {
+                    setIsLoggedIn(true);
+                }
+                setLoading(false);
+            }, []);
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="text-white text-xl">Loading...</div>
+                    </div>
+                );
+            }
+
+            if (!isLoggedIn) {
+                return <LoginScreen onLogin={() => setIsLoggedIn(true)} />;
+            }
+
+            return <InventoryDashboard onLogout={() => {
+                localStorage.removeItem('inventory_session');
+                setIsLoggedIn(false);
+            }} />;
+        }
+
+        // ==================== Login Screen ====================
+        function LoginScreen({ onLogin }) {
+            const [password, setPassword] = React.useState('');
+            const [error, setError] = React.useState('');
+            const [showHint, setShowHint] = React.useState(false);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (password === MASTER_PASSWORD) {
+                    localStorage.setItem('inventory_session', 'active');
+                    onLogin();
+                } else {
+                    setError('Invalid password! Please try again.');
+                    setPassword('');
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full slide-in">
+                        <div className="text-center mb-8">
+                            <div className="text-6xl mb-4">🔐</div>
+                            <h2 className="text-3xl font-bold text-gray-800">Inventory Access</h2>
+                            <p className="text-gray-600 mt-2">Enter password to continue</p>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-lg"
+                                    placeholder="Enter password..."
+                                    autoFocus
+                                    required
+                                />
+                                {error && (
+                                    <p className="text-red-600 text-sm mt-2">{error}</p>
+                                )}
+                            </div>
+
+                            <button
+                                type="submit"
+                                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                            >
+                                Access Inventory
+                            </button>
+                        </form>
+
+                        <div className="mt-6 text-center">
+                            <button
+                                onClick={() => setShowHint(!showHint)}
+                                className="text-gray-500 text-sm hover:text-gray-700"
+                            >
+                                {showHint ? 'Hide hint' : 'Need hint?'}
+                            </button>
+                            {showHint && (
+                                <p className="mt-2 text-sm text-gray-600 bg-gray-100 p-3 rounded-lg">
+                                    Contact administrator for password
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== Inventory Dashboard ====================
+        function InventoryDashboard({ onLogout }) {
+            const [inventory, setInventory] = React.useState([]);
+            const [selectedStatus, setSelectedStatus] = React.useState('all'); // all, Available, Assigned, Maintenance
+            const [searchTerm, setSearchTerm] = React.useState('');
+            const [showForm, setShowForm] = React.useState(false);
+            const [editingItem, setEditingItem] = React.useState(null);
+            const [selectedImage, setSelectedImage] = React.useState(null);
+            const [showScanner, setShowScanner] = React.useState(false);
+            const [message, setMessage] = React.useState('');
+            const [isSyncing, setIsSyncing] = React.useState(false);
+            const [lastSync, setLastSync] = React.useState(null);
+
+            React.useEffect(() => {
+                loadInventory();
+                startAutoSync();
+            }, []);
+
+            const startAutoSync = () => {
+                // Load from cloud on start
+                loadFromCloud();
+                
+                // Auto-sync every 30 seconds
+                const interval = setInterval(() => {
+                    syncToCloud();
+                }, 30000);
+                
+                return () => clearInterval(interval);
+            };
+
+            const loadFromCloud = async () => {
+                const cloudData = await cloudService.loadFromCloud();
+                if (cloudData) {
+                    setInventory(cloudData);
+                    localStorage.setItem('inventory_data', JSON.stringify(cloudData));
+                    setLastSync(new Date());
+                }
+            };
+
+            const syncToCloud = async () => {
+                setIsSyncing(true);
+                const data = JSON.parse(localStorage.getItem('inventory_data') || '[]');
+                const success = await cloudService.saveToCloud(data);
+                if (success) {
+                    setLastSync(new Date());
+                    showMessage('✅ Synced with cloud');
+                }
+                setIsSyncing(false);
+            };
+
+            const loadInventory = () => {
+                const saved = localStorage.getItem('inventory_data');
+                if (saved) {
+                    setInventory(JSON.parse(saved));
+                } else {
+                    // Default sample data
+                    const defaultData = getDefaultInventory();
+                    setInventory(defaultData);
+                    localStorage.setItem('inventory_data', JSON.stringify(defaultData));
+                }
+            };
+
+            const getDefaultInventory = () => {
+                return [
+                    {
+                        id: Date.now() + 1,
+                        name: 'MacBook Pro M3',
+                        serialNumber: 'MBP-M3-2024-001',
+                        barcode: 'MAC001',
+                        category: 'Laptop',
+                        status: 'Assigned',
+                        assignedTo: 'Rajesh Kumar',
+                        department: 'Engineering',
+                        price: '129900',
+                        purchaseDate: '2024-01-15',
+                        notes: 'Apple M3 Pro, 18GB RAM, 512GB SSD',
+                        image: '',
+                        lastUpdated: new Date().toISOString()
+                    },
+                    {
+                        id: Date.now() + 2,
+                        name: 'Dell XPS 15',
+                        serialNumber: 'XPS-15-2024-042',
+                        barcode: 'DELL042',
+                        category: 'Laptop',
+                        status: 'Available',
+                        assignedTo: '',
+                        department: 'IT',
+                        price: '145000',
+                        purchaseDate: '2024-02-20',
+                        notes: 'Intel i9, 32GB RAM, 1TB SSD',
+                        image: '',
+                        lastUpdated: new Date().toISOString()
+                    },
+                    {
+                        id: Date.now() + 3,
+                        name: 'iPad Pro 12.9"',
+                        serialNumber: 'IPAD-PRO-2024-018',
+                        barcode: 'IPAD018',
+                        category: 'Tablet',
+                        status: 'Maintenance',
+                        assignedTo: 'IT Support',
+                        department: 'IT',
+                        price: '89900',
+                        purchaseDate: '2024-03-10',
+                        notes: 'M2 chip, 256GB - Screen issue',
+                        image: '',
+                        lastUpdated: new Date().toISOString()
+                    },
+                    {
+                        id: Date.now() + 4,
+                        name: 'HP EliteBook',
+                        serialNumber: 'HP-ELITE-2024-023',
+                        barcode: 'HP023',
+                        category: 'Laptop',
+                        status: 'Available',
+                        assignedTo: '',
+                        department: 'Sales',
+                        price: '95000',
+                        purchaseDate: '2024-01-05',
+                        notes: 'Intel i7, 16GB RAM, 512GB SSD',
+                        image: '',
+                        lastUpdated: new Date().toISOString()
+                    },
+                    {
+                        id: Date.now() + 5,
+                        name: 'iPhone 15 Pro',
+                        serialNumber: 'IP15-PRO-2024-089',
+                        barcode: 'IPH089',
+                        category: 'Mobile',
+                        status: 'Assigned',
+                        assignedTo: 'Priya Sharma',
+                        department: 'Marketing',
+                        price: '134900',
+                        purchaseDate: '2024-02-01',
+                        notes: '256GB, Natural Titanium',
+                        image: '',
+                        lastUpdated: new Date().toISOString()
+                    },
+                    {
+                        id: Date.now() + 6,
+                        name: 'Cisco Router',
+                        serialNumber: 'CISCO-RTR-2024-015',
+                        barcode: 'CIS015',
+                        category: 'Networking',
+                        status: 'Maintenance',
+                        assignedTo: 'Network Team',
+                        department: 'IT',
+                        price: '45000',
+                        purchaseDate: '2023-12-10',
+                        notes: 'Configuration issue - Under repair',
+                        image: '',
+                        lastUpdated: new Date().toISOString()
+                    }
+                ];
+            };
+
+            const showMessage = (msg, isError = false) => {
+                setMessage({ text: msg, isError });
+                setTimeout(() => setMessage(''), 3000);
+            };
+
+            const handleSaveItem = (formData) => {
+                let updated;
+                if (editingItem) {
+                    updated = inventory.map(item => 
+                        item.id === formData.id ? { ...formData, lastUpdated: new Date().toISOString() } : item
+                    );
+                    showMessage('✅ Item updated successfully!');
+                } else {
+                    const newItem = {
+                        ...formData,
+                        id: Date.now(),
+                        lastUpdated: new Date().toISOString()
+                    };
+                    updated = [...inventory, newItem];
+                    showMessage('✅ Item added successfully!');
+                }
+                
+                setInventory(updated);
+                localStorage.setItem('inventory_data', JSON.stringify(updated));
+                setShowForm(false);
+                setEditingItem(null);
+                
+                // Sync immediately
+                cloudService.saveToCloud(updated);
+                setLastSync(new Date());
+            };
+
+            const handleDeleteItem = (id) => {
+                if (window.confirm('Delete this item?')) {
+                    const updated = inventory.filter(item => item.id !== id);
+                    setInventory(updated);
+                    localStorage.setItem('inventory_data', JSON.stringify(updated));
+                    cloudService.saveToCloud(updated);
+                    showMessage('✅ Item deleted successfully!');
+                }
+            };
+
+            const handleBarcodeScan = (barcode) => {
+                const existingItem = inventory.find(item => item.barcode === barcode);
+                if (existingItem) {
+                    showMessage(`📱 Found: ${existingItem.name} (${existingItem.status})`);
+                    setEditingItem(existingItem);
+                } else {
+                    setShowForm(true);
+                    setTimeout(() => {
+                        const barcodeInput = document.querySelector('input[name="barcode"]');
+                        if (barcodeInput) {
+                            barcodeInput.value = barcode;
+                            const event = new Event('input', { bubbles: true });
+                            barcodeInput.dispatchEvent(event);
+                        }
+                    }, 100);
+                }
+            };
+
+            const handleImageUpload = (e, setFormData) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setFormData(prev => ({ ...prev, image: reader.result }));
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const exportToExcel = () => {
+                const exportData = inventory.map(({ image, lastUpdated, ...rest }) => rest);
+                const ws = XLSX.utils.json_to_sheet(exportData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+                XLSX.writeFile(wb, `inventory_${new Date().toISOString().split('T')[0]}.xlsx`);
+                showMessage('✅ Excel exported!');
+            };
+
+            // Filter inventory based on selected status
+            const filteredInventory = inventory.filter(item => {
+                const matchesStatus = selectedStatus === 'all' || item.status === selectedStatus;
+                const matchesSearch = !searchTerm || 
+                    Object.values(item).some(val => 
+                        String(val).toLowerCase().includes(searchTerm.toLowerCase())
+                    );
+                return matchesStatus && matchesSearch;
+            });
+
+            // Calculate stats for each status
+            const stats = {
+                all: inventory.length,
+                Available: inventory.filter(i => i.status === 'Available').length,
+                Assigned: inventory.filter(i => i.status === 'Assigned').length,
+                Maintenance: inventory.filter(i => i.status === 'Maintenance').length,
+                totalValue: inventory.reduce((sum, i) => sum + (Number(i.price) || 0), 0)
+            };
+
+            return (
+                <div className="min-h-screen p-6">
+                    <div className="max-w-7xl mx-auto">
+                        {/* Header */}
+                        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+                                        📦 Inventory Management
+                                    </h1>
+                                    <p className="text-gray-600 mt-1">
+                                        Total Assets: {stats.all} | Total Value: ₹{stats.totalValue.toLocaleString()}
+                                        {lastSync && (
+                                            <span className="ml-4 text-sm text-gray-500">
+                                                Last sync: {lastSync.toLocaleTimeString()}
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={syncToCloud} disabled={isSyncing}
+                                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2">
+                                        {isSyncing ? '🔄 Syncing...' : '☁️ Sync'}
+                                    </button>
+                                    <button onClick={exportToExcel}
+                                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                                        📥 Export
+                                    </button>
+                                    <button onClick={() => setShowScanner(true)}
+                                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">
+                                        📷 Scan
+                                    </button>
+                                    <button onClick={() => setShowForm(true)}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                        ➕ Add Item
+                                    </button>
+                                    <button onClick={onLogout}
+                                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                                        🚪 Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Message */}
+                        {message && (
+                            <div className={`border px-4 py-3 rounded-lg mb-6 ${
+                                message.isError ? 'bg-red-100 border-red-300 text-red-800' 
+                                : 'bg-green-100 border-green-300 text-green-800'
+                            }`}>
+                                {message.text}
+                            </div>
+                        )}
+
+                        {/* Status Cards - Click to Filter */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div 
+                                onClick={() => setSelectedStatus('all')}
+                                className={`bg-white rounded-xl shadow-md p-6 cursor-pointer status-card border-2 transition-all
+                                    ${selectedStatus === 'all' ? 'status-active border-blue-500 shadow-xl' : 'border-transparent'}`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-gray-500 text-sm font-medium">All Items</p>
+                                        <p className="text-3xl font-bold text-gray-800 mt-1">{stats.all}</p>
+                                    </div>
+                                    <span className="text-4xl">📊</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">Click to view all items</p>
+                            </div>
+                            
+                            <div 
+                                onClick={() => setSelectedStatus('Available')}
+                                className={`bg-white rounded-xl shadow-md p-6 cursor-pointer status-card border-2 transition-all
+                                    ${selectedStatus === 'Available' ? 'status-active border-green-500 shadow-xl' : 'border-transparent'}`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-gray-500 text-sm font-medium">Available</p>
+                                        <p className="text-3xl font-bold text-green-600 mt-1">{stats.Available}</p>
+                                    </div>
+                                    <span className="text-4xl">✅</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">Click to view available items</p>
+                            </div>
+                            
+                            <div 
+                                onClick={() => setSelectedStatus('Assigned')}
+                                className={`bg-white rounded-xl shadow-md p-6 cursor-pointer status-card border-2 transition-all
+                                    ${selectedStatus === 'Assigned' ? 'status-active border-blue-500 shadow-xl' : 'border-transparent'}`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-gray-500 text-sm font-medium">Assigned</p>
+                                        <p className="text-3xl font-bold text-blue-600 mt-1">{stats.Assigned}</p>
+                                    </div>
+                                    <span className="text-4xl">👤</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">Click to view assigned items</p>
+                            </div>
+                            
+                            <div 
+                                onClick={() => setSelectedStatus('Maintenance')}
+                                className={`bg-white rounded-xl shadow-md p-6 cursor-pointer status-card border-2 transition-all
+                                    ${selectedStatus === 'Maintenance' ? 'status-active border-yellow-500 shadow-xl' : 'border-transparent'}`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-gray-500 text-sm font-medium">Maintenance</p>
+                                        <p className="text-3xl font-bold text-yellow-600 mt-1">{stats.Maintenance}</p>
+                                    </div>
+                                    <span className="text-4xl">🔧</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">Click to view items in maintenance</p>
+                            </div>
+                        </div>
+
+                        {/* Search Bar */}
+                        <div className="bg-white rounded-xl shadow-md p-4 mb-6">
+                            <div className="flex gap-4 items-center">
+                                <div className="flex-1">
+                                    <input
+                                        type="text"
+                                        placeholder="🔍 Search by name, serial, barcode, assigned to..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                    Showing: <strong>{selectedStatus === 'all' ? 'All Items' : selectedStatus}</strong> ({filteredInventory.length} items)
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Inventory Grid */}
+                        {filteredInventory.length === 0 ? (
+                            <div className="bg-white rounded-xl shadow-md p-12 text-center">
+                                <p className="text-gray-500 text-lg">No items found in {selectedStatus === 'all' ? 'inventory' : selectedStatus}</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {filteredInventory.map(item => (
+                                    <div key={item.id} className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow">
+                                        {item.image && (
+                                            <div className="p-4 border-b">
+                                                <img 
+                                                    src={item.image} 
+                                                    alt={item.name}
+                                                    className="w-full h-40 object-cover rounded-lg clickable-image"
+                                                    onClick={() => setSelectedImage(item.image)}
+                                                />
+                                            </div>
+                                        )}
+                                        <div className="p-6">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div className="flex-1">
+                                                    <h3 className="text-lg font-semibold text-gray-800">{item.name}</h3>
+                                                    <p className="text-sm text-gray-500">SN: {item.serialNumber}</p>
+                                                    {item.barcode && (
+                                                        <p className="text-xs text-gray-400 mt-1">📷 {item.barcode}</p>
+                                                    )}
+                                                    <span className="inline-block mt-2 px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
+                                                        {item.category}
+                                                    </span>
+                                                </div>
+                                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                                    item.status === 'Available' ? 'bg-green-100 text-green-800' :
+                                                    item.status === 'Assigned' ? 'bg-blue-100 text-blue-800' :
+                                                    'bg-yellow-100 text-yellow-800'
+                                                }`}>
+                                                    {item.status}
+                                                </span>
+                                            </div>
+                                            
+                                            <div className="space-y-2 text-sm">
+                                                {item.assignedTo && (
+                                                    <div className="flex items-center gap-2">
+                                                        <span>👤</span>
+                                                        <span className="text-gray-700">{item.assignedTo}</span>
+                                                    </div>
+                                                )}
+                                                {item.department && (
+                                                    <div className="flex items-center gap-2">
+                                                        <span>🏢</span>
+                                                        <span className="text-gray-700">{item.department}</span>
+                                                    </div>
+                                                )}
+                                                {item.price && (
+                                                    <div className="flex items-center gap-2">
+                                                        <span>💰</span>
+                                                        <span className="text-gray-700 font-medium">₹{Number(item.price).toLocaleString()}</span>
+                                                    </div>
+                                                )}
+                                                {item.notes && (
+                                                    <div className="text-gray-600 text-xs italic mt-2">
+                                                        📝 {item.notes}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            
+                                            <div className="text-xs text-gray-400 mt-4">
+                                                Updated: {new Date(item.lastUpdated).toLocaleString()}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="border-t px-6 py-3 flex gap-2">
+                                            <button onClick={() => setEditingItem(item)}
+                                                className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
+                                                ✏️ Edit
+                                            </button>
+                                            <button onClick={() => handleDeleteItem(item.id)}
+                                                className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg">
+                                                🗑️ Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Barcode Scanner Modal */}
+                    {showScanner && (
+                        <BarcodeScanner
+                            onScan={handleBarcodeScan}
+                            onClose={() => setShowScanner(false)}
+                        />
+                    )}
+
+                    {/* Item Form Modal */}
+                    {(showForm || editingItem) && (
+                        <ItemForm
+                            initialData={editingItem}
+                            onSave={handleSaveItem}
+                            onClose={() => {
+                                setShowForm(false);
+                                setEditingItem(null);
+                            }}
+                            onImageUpload={handleImageUpload}
+                        />
+                    )}
+
+                    {/* Image Viewer */}
+                    {selectedImage && (
+                        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50" 
+                             onClick={() => setSelectedImage(null)}>
+                            <div className="max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                                <img src={selectedImage} alt="Full size" className="max-w-full max-h-[90vh] object-contain" />
+                                <button onClick={() => setSelectedImage(null)}
+                                    className="absolute top-4 right-4 text-white hover:text-gray-300 text-3xl">
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ==================== Barcode Scanner ====================
+        function BarcodeScanner({ onScan, onClose }) {
+            const [mode, setMode] = React.useState('manual');
+            const [manualBarcode, setManualBarcode] = React.useState('');
+            const videoRef = React.useRef(null);
+
+            React.useEffect(() => {
+                if (mode === 'camera') {
+                    Quagga.init({
+                        inputStream: {
+                            name: "Live",
+                            type: "LiveStream",
+                            target: videoRef.current,
+                            constraints: { width: 640, height: 480, facingMode: "environment" }
+                        },
+                        decoder: { readers: ["code_128_reader", "ean_reader", "code_39_reader", "upc_reader"] },
+                        locate: true,
+                        frequency: 10
+                    }, (err) => {
+                        if (!err) {
+                            Quagga.start();
+                            Quagga.onDetected((result) => {
+                                if (result?.codeResult?.code) {
+                                    onScan(result.codeResult.code);
+                                    Quagga.stop();
+                                    onClose();
+                                }
+                            });
+                        }
+                    });
+                }
+                return () => { if (Quagga) Quagga.stop(); };
+            }, [mode]);
+
+            const handleManualSubmit = (e) => {
+                e.preventDefault();
+                if (manualBarcode.trim()) {
+                    onScan(manualBarcode.trim());
+                    onClose();
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-xl p-6 max-w-2xl w-full">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-gray-800">Scan Barcode</h3>
+                            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">✕</button>
+                        </div>
+
+                        <div className="mb-4 flex gap-2">
+                            <button onClick={() => setMode('manual')}
+                                className={`flex-1 py-2 rounded-lg ${mode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>
+                                📝 Manual Entry
+                            </button>
+                            <button onClick={() => setMode('camera')}
+                                className={`flex-1 py-2 rounded-lg ${mode === 'camera' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>
+                                📷 Camera Scan
+                            </button>
+                        </div>
+
+                        {mode === 'manual' ? (
+                            <form onSubmit={handleManualSubmit}>
+                                <input type="text" value={manualBarcode} onChange={(e) => setManualBarcode(e.target.value)}
+                                    className="w-full px-4 py-3 border rounded-lg text-lg mb-4" placeholder="Type barcode..." autoFocus />
+                                <div className="flex gap-2">
+                                    <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg">Submit</button>
+                                    <button type="button" onClick={onClose} className="flex-1 bg-gray-300 py-2 rounded-lg">Cancel</button>
+                                </div>
+                            </form>
+                        ) : (
+                            <div>
+                                <div className="w-full h-80 bg-gray-900 rounded-lg overflow-hidden" ref={videoRef} />
+                                <div className="flex gap-2 mt-4">
+                                    <button onClick={() => { Quagga.stop(); onClose(); }}
+                                        className="flex-1 bg-gray-300 py-2 rounded-lg">Cancel</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== Item Form ====================
+        function ItemForm({ initialData, onSave, onClose, onImageUpload }) {
+            const [formData, setFormData] = React.useState(initialData || {
+                name: '', serialNumber: '', barcode: '', category: 'Laptop', status: 'Available',
+                assignedTo: '', department: '', price: '', purchaseDate: '', notes: '', image: ''
+            });
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(formData);
+            };
+
+            const handleChange = (field, value) => {
+                setFormData(prev => ({ ...prev, [field]: value }));
+            };
+
+            return (
+                <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-gray-800">{initialData ? 'Edit Item' : 'Add New Item'}</h3>
+                            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">✕</button>
+                        </div>
+                        
+                        <form onSubmit={handleSubmit}>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2">
+                                    <label className="block text-sm font-medium mb-1">Item Name *</label>
+                                    <input type="text" value={formData.name} onChange={(e) => handleChange('name', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Serial Number *</label>
+                                    <input type="text" value={formData.serialNumber} onChange={(e) => handleChange('serialNumber', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Barcode</label>
+                                    <input type="text" name="barcode" value={formData.barcode} onChange={(e) => handleChange('barcode', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Category</label>
+                                    <select value={formData.category} onChange={(e) => handleChange('category', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg">
+                                        <option>Laptop</option><option>Desktop</option><option>Tablet</option>
+                                        <option>Mobile</option><option>Printer</option><option>Networking</option><option>Other</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Status *</label>
+                                    <select value={formData.status} onChange={(e) => handleChange('status', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" required>
+                                        <option>Available</option><option>Assigned</option><option>Maintenance</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Price (₹)</label>
+                                    <input type="number" value={formData.price} onChange={(e) => handleChange('price', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Assigned To</label>
+                                    <input type="text" value={formData.assignedTo} onChange={(e) => handleChange('assignedTo', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Department</label>
+                                    <input type="text" value={formData.department} onChange={(e) => handleChange('department', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Purchase Date</label>
+                                    <input type="date" value={formData.purchaseDate} onChange={(e) => handleChange('purchaseDate', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-sm font-medium mb-1">Notes</label>
+                                    <textarea value={formData.notes} onChange={(e) => handleChange('notes', e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg" rows="2" />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-sm font-medium mb-1">Image</label>
+                                    <input type="file" accept="image/*" onChange={(e) => onImageUpload(e, setFormData)}
+                                        className="w-full px-3 py-2 border rounded-lg" />
+                                    {formData.image && <img src={formData.image} alt="Preview" className="mt-2 max-h-32 rounded" />}
+                                </div>
+                            </div>
+                            
+                            <div className="flex gap-2 mt-6">
+                                <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg">
+                                    {initialData ? 'Update' : 'Add'} Item
+                                </button>
+                                <button type="button" onClick={onClose} className="flex-1 bg-gray-300 py-2 rounded-lg">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render App
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
